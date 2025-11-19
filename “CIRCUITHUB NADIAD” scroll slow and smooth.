@@ -1,0 +1,137 @@
+#include "Arduino_LED_Matrix.h"
+#include <ctype.h>
+
+ArduinoLEDMatrix matrix;
+
+// 5x7 font (columns, bits 0..6 = rows)
+const uint8_t font5x7[27][5] = {
+  {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A
+  {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
+  {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
+  {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
+  {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
+  {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
+  {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
+  {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
+  {0x41, 0x41, 0x7F, 0x41, 0x41}, // I
+  {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
+  {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
+  {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
+  {0x7F, 0x02, 0x04, 0x02, 0x7F}, // M
+  {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
+  {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
+  {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
+  {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
+  {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
+  {0x46, 0x49, 0x49, 0x49, 0x31}, // S
+  {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
+  {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
+  {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
+  {0x7F, 0x20, 0x18, 0x20, 0x7F}, // W
+  {0x41, 0x22, 0x1C, 0x22, 0x41}, // X
+  {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
+  {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
+  {0, 0, 0, 0, 0}                 // space
+};
+
+const int MATRIX_ROWS = 8;
+const int MATRIX_COLS = 13;
+
+// ===== SPEED CONTROL =====
+uint16_t scrollDelayMs = 140;   // default speed (bigger = slower)
+
+// Optional presets (just for reference)
+// slow    ~ 200 ms
+// medium  ~ 140 ms
+// fast    ~ 80 ms
+
+// ==========================
+
+uint8_t frame[MATRIX_ROWS][MATRIX_COLS];
+
+const int MAX_COLS = 200;
+uint8_t textCols[MAX_COLS];
+int totalCols = 0;
+
+void clearFrame() {
+  for (int y = 0; y < MATRIX_ROWS; y++)
+    for (int x = 0; x < MATRIX_COLS; x++)
+      frame[y][x] = 0;
+}
+
+int charIndex(char c) {
+  if (c == ' ') return 26;
+  c = toupper((unsigned char)c);
+  if (c < 'A' || c > 'Z') return 26;
+  return c - 'A';
+}
+
+void buildTextColumns(const char *text) {
+  totalCols = 0;
+
+  // blank space before text
+  for (int i = 0; i < MATRIX_COLS; i++) {
+    textCols[totalCols++] = 0;
+  }
+
+  for (int i = 0; text[i] != '\0' && totalCols < MAX_COLS - 6; i++) {
+    int idx = charIndex(text[i]);
+    for (int c = 0; c < 5; c++) {
+      textCols[totalCols++] = font5x7[idx][c];
+    }
+    textCols[totalCols++] = 0;    // 1 column gap
+  }
+
+  // blank space after text
+  for (int i = 0; i < MATRIX_COLS; i++) {
+    textCols[totalCols++] = 0;
+  }
+}
+
+void renderOffset(int offset) {
+  clearFrame();
+
+  for (int x = 0; x < MATRIX_COLS; x++) {
+    int src = offset + x;
+    uint8_t colVal = 0;
+    if (src >= 0 && src < totalCols) {
+      colVal = textCols[src];
+    }
+    for (int y = 0; y < 7; y++) {
+      frame[y][x] = (colVal >> y) & 0x01;
+    }
+  }
+
+  matrix.renderBitmap(frame, MATRIX_ROWS, MATRIX_COLS);
+}
+
+void handleSerialSpeed() {
+  // Press 1,2,3 in Serial Monitor to change speed
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '1')      scrollDelayMs = 220;   // slow
+    else if (c == '2') scrollDelayMs = 140;   // medium
+    else if (c == '3') scrollDelayMs = 80;    // fast
+  }
+}
+
+void scrollText(const char *text) {
+  buildTextColumns(text);
+
+  for (int offset = 0; offset < totalCols - MATRIX_COLS; offset++) {
+    handleSerialSpeed();          // allow speed change during scroll
+    renderOffset(offset);
+    delay(scrollDelayMs);
+  }
+}
+
+void setup() {
+  matrix.begin();
+  Serial.begin(115200);           // for speed control
+  Serial.println("Speed control: '1' = slow, '2' = medium, '3' = fast");
+}
+
+void loop() {
+  scrollText("CIRCUITHUB NADIAD");
+  delay(500);
+}
